@@ -1,0 +1,25 @@
+# Environments & Python cache
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.DS_Store
+*.log
+
+# Sensitive credentials & live session profile data
+text_files/accounts.txt
+text_files/data.txt
+data.pkl
+chrome_profile_data/
+user-data-dir/*
+!user-data-dir/dummy.txt
+chrome_profile/*
+!chrome_profile/dummy.txt
+
+# Binaries
+chromedriver.exe
+*.exe
+
+*.wasm
