@@ -1,4 +1,5 @@
 from trivia_qa import wizard101_trivia_questions_and_answers as wt
+from answers import Wizard101_Trivia as answers_dict
 import difflib
 import os
 import time as t
@@ -47,17 +48,20 @@ class AutoTrivia():
         return None    
         
     def run(self, user, passwrd, driver):
+        # Merge question & answer datasets for maximum accuracy
+        qa_dict = {**wt, **answers_dict}
+
         quizes = [
-        "Pirate101 Valencia Trivia", 
-        "Wizard101 Adventuring Trivia", 
-        "Wizard101 Conjuring Trivia", 
-        "Wizard101 Magical Trivia", 
-        "Wizard101 Marleybone Trivia", 
-        "Wizard101 Mystical Trivia", 
-        "Wizard101 Spellbinding Trivia", 
-        "Wizard101 Spells Trivia", 
-        "Wizard101 Wizard City Trivia", 
-        "Wizard101 Zafaria Trivia"
+            "Pirate101 Valencia Trivia", 
+            "Wizard101 Adventuring Trivia", 
+            "Wizard101 Conjuring Trivia", 
+            "Wizard101 Magical Trivia", 
+            "Wizard101 Marleybone Trivia", 
+            "Wizard101 Mystical Trivia", 
+            "Wizard101 Spellbinding Trivia", 
+            "Wizard101 Spells Trivia", 
+            "Wizard101 Wizard City Trivia", 
+            "Wizard101 Zafaria Trivia"
         ]
 
         driver.get("https://www.wizard101.com/quiz/trivia/game/kingsisle-trivia")
@@ -72,7 +76,7 @@ class AutoTrivia():
         t.sleep(4)
         self.chromewebdriver.clickCookies(driver=driver)
 
-        # All the button xpath's/frames/clickables/etc. that are used in the script:
+        # Login elements
         username_button = '//*[@id="loginUserName"]'
         password_button = '//*[@id="loginPassword"]'
         login_button = '//*[@id="wizardLoginButton"]//input[@type="submit" or @value="Login"]'
@@ -100,143 +104,219 @@ class AutoTrivia():
                 print(f"Error while logging in: {e}")
         self.chromewebdriver.clickCookies(driver=driver)
 
-        # Loop through each quiz directly
-        for quiz_idx, quiz_name in enumerate(quizes, start=1):
-            slug = quiz_name.lower().replace(" ", "-")
-            quiz_url = f"https://www.wizard101.com/quiz/trivia/game/{slug}"
-            print(f"\n==========================================")
-            print(f"[{quiz_idx}/{len(quizes)}] Starting: {quiz_name}")
-            print(f"==========================================")
+        # Track completed quizzes and status
+        completed_quizes = set()
+        daily_limit_reached = False
+        quizzes_claimed = 0
 
-            driver.get(quiz_url)
-            t.sleep(3)
-            self.chromewebdriver.clickCookies(driver=driver)
+        print(f"\nStarting trivia automation for {user}. Aiming to complete all quizzes until daily limit (100 crowns)...")
 
-            # Check if quiz questions exist or if already completed
-            try:
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, 'quizQuestion'))
-                )
-            except TimeoutException:
-                if driver.find_elements(By.XPATH, '//*[@id="quizFormComponent"]//a[contains(text(), "TAKE ANOTHER QUIZ")]'):
-                    print(f"Quiz '{quiz_name}' appears already completed today. Moving to next...")
-                else:
-                    print(f"Quiz '{quiz_name}' questions could not be loaded. Moving to next...")
-                continue
+        # Multi-pass loop: up to 2 passes over the quiz pool in case any need retry
+        for pass_num in range(1, 3):
+            if daily_limit_reached or quizzes_claimed >= 10:
+                break
 
-            # Answer questions for this quiz
-            consecutive_errors = 0
-            quiz_finished = False
+            quizes_to_run = [q for q in quizes if q not in completed_quizes]
+            if not quizes_to_run:
+                break
 
-            while not quiz_finished and consecutive_errors < 5:
+            if pass_num > 1:
+                print(f"\n--- Starting Pass {pass_num} for remaining {len(quizes_to_run)} quizzes ---")
+
+            for quiz_idx, quiz_name in enumerate(quizes_to_run, start=1):
+                if daily_limit_reached or quizzes_claimed >= 10:
+                    break
+
+                slug = quiz_name.lower().replace(" ", "-")
+                quiz_url = f"https://www.wizard101.com/quiz/trivia/game/{slug}"
+                print(f"\n==========================================")
+                print(f"[{quiz_idx}/{len(quizes_to_run)}] Starting: {quiz_name}")
+                print(f"==========================================")
+
+                driver.get(quiz_url)
+                t.sleep(3)
+                self.chromewebdriver.clickCookies(driver=driver)
+
+                # Check if daily limit message is displayed on page
                 try:
-                    # Check if 'Get Results' or continue button is visible
-                    results_candidates = driver.find_elements(
-                        By.XPATH,
-                        '//*[@id="quizFormComponent"]//a[contains(text(), "Results") or @id="bp_continue"] | '
-                        '//*[@id="quizFormComponent"]/div[3]/div[3]/a | '
-                        '//*[@id="bp_continue"]'
+                    body_text = driver.find_element(By.TAG_NAME, 'body').text.lower()
+                    if any(msg in body_text for msg in ["maximum crowns you can earn today", "already earned your crowns for today", "already earned 100 crowns"]):
+                        print("KingsIsle indicates the daily crowns limit (100 crowns) has already been reached today!")
+                        daily_limit_reached = True
+                        break
+                except Exception:
+                    pass
+
+                # Check if this quiz was already completed today
+                questions_check = driver.find_elements(By.CLASS_NAME, 'quizQuestion')
+                another_quiz_btn = driver.find_elements(
+                    By.XPATH,
+                    '//*[@id="quizFormComponent"]//*[contains(text(), "TAKE ANOTHER QUIZ") or contains(text(), "YOU FINISHED")]'
+                )
+                if another_quiz_btn and (not questions_check or not questions_check[0].is_displayed()):
+                    print(f"Quiz '{quiz_name}' appears already completed today. Moving to next...")
+                    completed_quizes.add(quiz_name)
+                    continue
+
+                # Wait for first question to appear
+                try:
+                    WebDriverWait(driver, 12).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, 'quizQuestion'))
                     )
+                except TimeoutException:
+                    print(f"Could not load questions for '{quiz_name}'. Moving to next...")
+                    continue
 
-                    if results_candidates:
-                        print("Quiz questions answered! Submitting for results...")
-                        try:
-                            results_candidates[0].click()
-                            t.sleep(3)
-                        except Exception:
-                            pass
+                # Answer questions for this quiz (up to 15 questions)
+                last_q_text = ""
+                same_q_count = 0
 
-                        # If reward popup appears, click submit / claim
-                        jpop_frames = driver.find_elements(By.ID, "jPopFrame_content")
-                        if jpop_frames and jpop_frames[0].is_displayed():
-                            try:
-                                driver.switch_to.frame(jpop_frames[0])
-                                claim_btn = driver.find_elements(By.XPATH, '//*[@id="submit"] | //input[@type="submit"]')
-                                if claim_btn:
-                                    claim_btn[0].click()
-                                    t.sleep(2)
-                                driver.switch_to.default_content()
-                            except Exception:
-                                driver.switch_to.default_content()
-
-                        # Solve completion captcha
-                        self.chromewebdriver.solveCaptcha(driver=driver)
-
-                        # Update crowns
-                        if os.path.exists('data.pkl') and os.stat('data.pkl').st_size != 0:
-                            try:
-                                with open('data.pkl', 'rb') as f:
-                                    self.chromewebdriver.crowns_earned = dill.load(f)
-                            except Exception:
-                                pass
-                        self.chromewebdriver.crowns_earned += 10
-                        print(f"Received 10 crowns! Lifetime total: {self.chromewebdriver.crowns_earned} crowns!")
-                        try:
-                            self.chromewebdriver.dump(self.chromewebdriver.crowns_earned)
-                        except Exception as e:
-                            print(f"Error saving crowns: {e}")
-
-                        quiz_finished = True
+                for step in range(1, 16):
+                    q_els = driver.find_elements(By.CLASS_NAME, 'quizQuestion')
+                    if not q_els or not q_els[0].is_displayed():
+                        # No more questions visible; quiz finished!
                         break
 
-                    # Wait for the question to be visible
-                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'quizQuestion')))
-                    question_el = driver.find_element(By.CLASS_NAME, 'quizQuestion')
-                    question_text = question_el.text
+                    q_text = q_els[0].text.strip()
+                    if not q_text:
+                        t.sleep(1)
+                        q_els = driver.find_elements(By.CLASS_NAME, 'quizQuestion')
+                        if not q_els or not q_els[0].is_displayed():
+                            break
+                        q_text = q_els[0].text.strip()
+                        if not q_text:
+                            break
 
-                    # Find closest matching question
-                    parsed_question = difflib.get_close_matches(question_text, wt.keys())
-                    if parsed_question:
-                        answer = wt.get(parsed_question[0])
+                    if q_text == last_q_text:
+                        same_q_count += 1
+                        if same_q_count >= 3:
+                            print("  Question stuck, submitting again...")
+                            same_q_count = 0
+                        else:
+                            t.sleep(1)
+                            continue
                     else:
-                        answer = ""
+                        same_q_count = 0
+                        last_q_text = q_text
 
-                    # Wait for nextQuestion button to be clickable
-                    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, 'nextQuestion')))
+                    print(f"  Q{step}: {q_text[:65]}...")
 
-                    # Collect candidate answer choices
-                    answers = []
-                    for a_el in driver.find_elements(By.CLASS_NAME, "answerText"):
-                        clean_text = a_el.text.replace('', '')
-                        answers.append(clean_text)
+                    # Match target answer
+                    target_ans = ""
+                    matches = difflib.get_close_matches(q_text, qa_dict.keys(), n=1, cutoff=0.5)
+                    if matches:
+                        target_ans = qa_dict[matches[0]]
 
-                    # Match closest answer
-                    parsed_answer = difflib.get_close_matches(answer, answers)
-                    if parsed_answer:
-                        ans_idx = answers.index(parsed_answer[0])
+                    # Extract candidate choices using JavaScript
+                    choice_texts = driver.execute_script("""
+                        return Array.from(document.querySelectorAll('.answersContainer .answer')).map(function(el) {
+                            return el.textContent.trim();
+                        });
+                    """) or []
+
+                    ans_idx = 0
+                    if target_ans and choice_texts:
+                        clean_target = target_ans.strip(" .?!'\"").lower()
+                        clean_choices = [c.strip(" .?!'\"").lower() for c in choice_texts]
+
+                        found = False
+                        for idx, c in enumerate(clean_choices):
+                            if c == clean_target:
+                                ans_idx = idx
+                                found = True
+                                break
+                        if not found:
+                            for idx, c in enumerate(clean_choices):
+                                if clean_target in c or c in clean_target:
+                                    ans_idx = idx
+                                    found = True
+                                    break
+                        if not found:
+                            m = difflib.get_close_matches(clean_target, clean_choices, n=1, cutoff=0.4)
+                            if m:
+                                ans_idx = clean_choices.index(m[0])
+
+                    # Select answer and submit via updateQuiz()
+                    driver.execute_script("""
+                        var nodes = document.getElementsByName('answers');
+                        if (nodes.length > arguments[0]) {
+                            nodes[arguments[0]].checked = true;
+                            if (typeof updateQuiz === 'function') {
+                                updateQuiz();
+                            } else {
+                                var btn = document.getElementById('nextQuestion');
+                                if (btn) btn.click();
+                            }
+                        }
+                    """, ans_idx)
+
+                    t.sleep(1.8)
+
+                print(f"All questions answered for '{quiz_name}'! Looking for CLAIM YOUR REWARD button...")
+                t.sleep(2)
+                self.chromewebdriver.clickCookies(driver=driver)
+
+                # Click CLAIM YOUR REWARD or See Your Score to open the reward popup
+                claim_btns = driver.find_elements(
+                    By.XPATH,
+                    '//*[@id="quizFormComponent"]//a[contains(@class, "kiaccountsbutton") or contains(text(), "CLAIM YOUR REWARD") or contains(text(), "See Your Score")]'
+                )
+                if claim_btns:
+                    print("Clicking CLAIM YOUR REWARD button to open reward popup...")
+                    try:
+                        driver.execute_script("arguments[0].click();", claim_btns[-1])
+                    except Exception:
+                        try:
+                            claim_btns[-1].click()
+                        except Exception:
+                            pass
+                    t.sleep(3)
+
+                # Check if daily limit reached
+                try:
+                    body_text = driver.find_element(By.TAG_NAME, 'body').text.lower()
+                    if any(msg in body_text for msg in ["maximum crowns you can earn today", "already earned your crowns for today", "already earned 100 crowns"]):
+                        print("Daily crowns limit reached!")
+                        daily_limit_reached = True
+                        completed_quizes.add(quiz_name)
+                        break
+                except Exception:
+                    pass
+
+                # Wait up to 8 seconds for reward popup (jPopFrame_content)
+                popup_visible = False
+                for _ in range(8):
+                    jpop = driver.find_elements(By.ID, "jPopFrame_content")
+                    if jpop and jpop[0].is_displayed():
+                        popup_visible = True
+                        break
+                    t.sleep(1)
+
+                if popup_visible:
+                    status = self.chromewebdriver.solveCaptcha(driver=driver)
+                    if status == "DAILY_LIMIT":
+                        print("Daily crowns limit reached according to popup!")
+                        daily_limit_reached = True
+                        completed_quizes.add(quiz_name)
+                        break
+                    elif status == "SUCCESS":
+                        quizzes_claimed += 1
+                        completed_quizes.add(quiz_name)
+                        print(f"Quiz '{quiz_name}' successfully completed! ({quizzes_claimed}/10 claimed today)")
                     else:
-                        ans_idx = 0
+                        completed_quizes.add(quiz_name)
+                        print(f"Quiz '{quiz_name}' completed with status: {status}")
+                else:
+                    completed_quizes.add(quiz_name)
+                    print(f"Quiz '{quiz_name}' completed without popup (already claimed or score under 75%).")
 
-                    # Click the matched answer box
-                    answer_boxes = driver.find_elements(By.CLASS_NAME, "answerBox")
-                    if ans_idx < len(answer_boxes):
-                        answer_boxes[ans_idx].click()
-                        t.sleep(0.5)
+                t.sleep(2)
 
-                    # Click next question button
-                    next_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, 'nextQuestion')))
-                    next_btn.click()
-                    t.sleep(2)
-                    consecutive_errors = 0
+        if daily_limit_reached or quizzes_claimed >= 10:
+            print(f"\nCompleted all quizzes possible! Daily maximum crowns reached for {user}.")
+        else:
+            print(f"\nFinished iterating through all quizzes for {user}. Total quizzes claimed this session: {quizzes_claimed}.")
 
-                except Exception as e:
-                    consecutive_errors += 1
-                    t.sleep(2)
-                    # Check if results button appeared during error
-                    check_results = driver.find_elements(
-                        By.XPATH,
-                        '//*[@id="quizFormComponent"]//a[contains(text(), "Results") or @id="bp_continue"] | '
-                        '//*[@id="quizFormComponent"]/div[3]/div[3]/a | '
-                        '//*[@id="bp_continue"]'
-                    )
-                    if check_results:
-                        continue
-                    print(f"Retrying question step ({consecutive_errors}/5)...")
-
-            print(f"Finished quiz {quiz_idx}/{len(quizes)}: {quiz_name}!")
-            t.sleep(2)
-
-        print(f"\nAll quizes have been completed for {user}'s account! Now moving on to the next account...")
         driver.quit()
     # continue with your code
 if __name__ == "__main__":
