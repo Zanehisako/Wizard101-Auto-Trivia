@@ -27,13 +27,23 @@ class AutoTrivia():
     
     def setup(self):
         """Opens a unique driver per account and adds arguments"""
+        if not self.user_account:
+            print("No accounts found in text_files/accounts.txt. Please add accounts in 'username password' format.")
+            return
+
+        print(f"\n==========================================")
+        print(f"Loaded {len(self.user_account)} account(s): {', '.join(self.user_account.keys())}")
+        print(f"==========================================\n")
+
         for key, value in self.user_account.items():
-            print(f"Starting thread for the user: {key}...")
+            print(f"\n==========================================")
+            print(f"Starting thread for user: {key}...")
+            print(f"==========================================")
             th = Thread(target=self.process_account, args=(key, value))
             th.start()
             th.join()  # Wait for the thread to complete before moving on to the next account
-            print(f"Success! {key}'s thread is complete!")
-        print("Success! All accounts have successfully completed the trivia!")
+            print(f"\nSuccess! {key}'s thread is complete!")
+        print("\nSuccess! All accounts have successfully completed the trivia!")
 
     def process_account(self, key, value):
         """Processes a single account"""
@@ -325,10 +335,18 @@ if __name__ == "__main__":
     accounts_file = os.path.join('text_files', 'accounts.txt')
     if os.path.exists(accounts_file):
         with open(accounts_file, 'r', encoding='utf-8') as accounts:
-            for i in accounts.readlines():
+            for idx, i in enumerate(accounts.readlines(), 1):
                 line = i.strip()
-                if line and not line.startswith('#'):
-                    parts = line.split(' ')
-                    if len(parts) >= 2:
-                        at.user_account[parts[0]] = parts[1]
+                if not line or line.startswith('#'):
+                    continue
+                if ':' in line:
+                    parts = [p.strip() for p in line.split(':', 1)]
+                else:
+                    parts = line.split()
+                if len(parts) >= 2:
+                    at.user_account[parts[0]] = parts[1]
+                else:
+                    print(f"Warning: Line {idx} in accounts.txt could not be parsed: '{line}' (expected 'username password' or 'username:password')")
+    else:
+        print(f"Accounts file not found at: {accounts_file}")
     at.setup()
