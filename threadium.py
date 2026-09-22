@@ -1,5 +1,7 @@
 import os
 import platform
+import subprocess
+import re
 import undetected_chromedriver as uc
 from threading import Barrier, Thread
 import time as t
@@ -124,6 +126,43 @@ class Threadium():
         elif user_agent is not None and user_agent == self.random:
             Stealth().create_random_useragent()
 
+    def get_chrome_major_version(self):
+        """Detects the major version of the installed Google Chrome."""
+        try:
+            exe = uc.find_chrome_executable()
+            if not exe:
+                return None
+
+            if platform.system() == "Darwin":
+                try:
+                    out = subprocess.check_output(
+                        ["defaults", "read", "/Applications/Google Chrome.app/Contents/Info.plist", "CFBundleShortVersionString"],
+                        text=True, stderr=subprocess.DEVNULL
+                    ).strip()
+                    m = re.search(r"^(\d+)", out)
+                    if m:
+                        return int(m.group(1))
+                except Exception:
+                    pass
+
+            if platform.system() == "Windows":
+                try:
+                    cmd = f'(Get-Item "{exe}").VersionInfo.ProductVersion'
+                    out = subprocess.check_output(["powershell", "-Command", cmd], text=True, stderr=subprocess.DEVNULL).strip()
+                    m = re.search(r"(\d+)", out)
+                    if m:
+                        return int(m.group(1))
+                except Exception:
+                    pass
+
+            out = subprocess.check_output([exe, "--version"], text=True, stderr=subprocess.DEVNULL).strip()
+            m = re.search(r"(\d+)\.", out)
+            if m:
+                return int(m.group(1))
+        except Exception as e:
+            print(f"Could not auto-detect Chrome version: {e}")
+        return None
+
     def start_all(self, args, stealth=False, profile_dir=None, user_agent=None, single_target=None):
         """Starts all the Chrome webdriver threads."""
         self.chrome_options.add_argument("--window-size=1800,1800")
@@ -139,7 +178,23 @@ class Threadium():
                 if self.chrome_driver_path and platform.system() == "Windows":
                     driver_kwargs["driver_executable_path"] = self.chrome_driver_path
 
-                driver = uc.Chrome(**driver_kwargs)
+                chrome_version = self.get_chrome_major_version()
+                if chrome_version:
+                    driver_kwargs["version_main"] = chrome_version
+                    print(f"Detected Chrome major version: {chrome_version}")
+
+                try:
+                    driver = uc.Chrome(**driver_kwargs)
+                except SessionNotCreatedException as e:
+                    m = re.search(r"Current browser version is (\d+)", str(e))
+                    if m:
+                        v = int(m.group(1))
+                        print(f"Retrying with detected browser version {v}...")
+                        driver_kwargs["version_main"] = v
+                        driver = uc.Chrome(**driver_kwargs)
+                    else:
+                        raise e
+
                 th = Thread(target=single_target, args=args + (driver,))
                 th.start()
                 th.join()
