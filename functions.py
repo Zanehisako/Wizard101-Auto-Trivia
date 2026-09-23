@@ -33,8 +33,7 @@ class WebDriver():
 
     def solveCaptcha(self, driver): 
         '''
-        Solves the captcha at the end of the quiz, clicks submit to claim crowns,
-        and automatically handles daily limits.
+        Solves the captcha in the reward popup, clicks submit, and confirms reward was claimed.
         '''
         print("Handling quiz completion reward popup & captcha...")
         t.sleep(2)
@@ -42,20 +41,29 @@ class WebDriver():
         if not jpop_list or not jpop_list[0].is_displayed():
             return "NO_POPUP"
 
+        limit_phrases = [
+            "exceeded the number of quizzes allowed today",
+            "come back tomorrow",
+            "maximum crowns",
+            "already earned",
+            "daily limit",
+            "100 crowns",
+        ]
+
         try:
             driver.switch_to.frame(jpop_list[0])
             
-            # Check for daily crowns limit inside the popup
+            # 1. Check for daily crowns/quiz limit inside the popup
             try:
                 body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
-                if any(x in body_text for x in ["maximum crowns", "already earned", "daily limit", "100 crowns"]):
-                    print("Daily crown limit detected in reward popup!")
+                if any(x in body_text for x in limit_phrases):
+                    print("Daily crown / quiz limit detected in reward popup!")
                     driver.switch_to.default_content()
                     return "DAILY_LIMIT"
             except Exception:
                 pass
 
-            # Dismiss cookie banner inside popup if present
+            # 2. Dismiss cookie banner inside popup if present
             try:
                 c_btn = driver.find_elements(By.XPATH, '//button[contains(@id, "accept") or contains(@id, "onetrust")]')
                 if c_btn and c_btn[0].is_displayed():
@@ -64,99 +72,107 @@ class WebDriver():
             except Exception:
                 pass
 
-            # Click recaptcha anchor if not already checked
-            anchors = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha/api2/anchor"]')
-            if anchors:
-                driver.switch_to.frame(anchors[0])
-                try:
-                    anchor = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.ID, "recaptcha-anchor")))
-                    if anchor.get_attribute("aria-checked") != "true":
-                        anchor.click()
-                        t.sleep(2)
-                except Exception:
-                    pass
-                driver.switch_to.default_content()
-                driver.switch_to.frame(driver.find_element(By.ID, "jPopFrame_content"))
-
-            # Check challenge bframe for Buster extension button
-            bframes = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha/api2/bframe"]')
-            if bframes and bframes[0].is_displayed():
-                driver.switch_to.frame(bframes[0])
-                buster_btns = driver.find_elements(By.CSS_SELECTOR, '#solver-button, .help-button-holder, button[id*="solver"]')
-                if buster_btns:
-                    print("Buster extension detected! Clicking auto-solve...")
-                    buster_btns[0].click()
-                    t.sleep(4)
-                else:
-                    print("Please complete the quiz captcha challenge in the browser window if prompted...")
-                driver.switch_to.default_content()
-                driver.switch_to.frame(driver.find_element(By.ID, "jPopFrame_content"))
-
-            # Wait for verification (up to 90 seconds)
-            start_time = t.time()
-            verified = False
-            while t.time() - start_time < 90:
-                try:
+            # 3. Locate reCAPTCHA anchor and click checkbox if present
+            anchor_found = False
+            for _ in range(5):
+                anchors = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha/api2/anchor"]')
+                if anchors:
+                    anchor_found = True
+                    try:
+                        driver.switch_to.frame(anchors[0])
+                        anchor = WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.ID, "recaptcha-anchor")))
+                        if anchor.get_attribute("aria-checked") != "true":
+                            anchor.click()
+                            print("Clicked reCAPTCHA checkbox...")
+                            t.sleep(2)
+                    except Exception:
+                        pass
                     driver.switch_to.default_content()
                     driver.switch_to.frame(driver.find_element(By.ID, "jPopFrame_content"))
+                    break
+                t.sleep(1)
 
-                    # If challenge bframe is visible, try clicking Buster if not yet clicked
-                    bframes = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha/api2/bframe"]')
-                    if bframes and bframes[0].is_displayed():
-                        driver.switch_to.frame(bframes[0])
-                        b_btn = driver.find_elements(By.CSS_SELECTOR, '#solver-button, .help-button-holder, button[id*="solver"]')
-                        if b_btn and b_btn[0].is_displayed() and b_btn[0].is_enabled():
-                            try:
-                                b_btn[0].click()
-                                t.sleep(3)
-                            except Exception:
-                                pass
+            # 4. If reCAPTCHA present, wait and solve challenge with Buster
+            if anchor_found:
+                print("Waiting for captcha challenge to be solved...")
+                start_time = t.time()
+                while t.time() - start_time < 60:
+                    try:
+                        # Check if anchor is already checked
                         driver.switch_to.default_content()
                         driver.switch_to.frame(driver.find_element(By.ID, "jPopFrame_content"))
+                        anchors = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha/api2/anchor"]')
+                        if anchors:
+                            driver.switch_to.frame(anchors[0])
+                            if driver.find_element(By.ID, "recaptcha-anchor").get_attribute("aria-checked") == "true":
+                                print("Quiz captcha successfully verified!")
+                                break
 
-                    anchors = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha/api2/anchor"]')
-                    if anchors:
-                        driver.switch_to.frame(anchors[0])
-                        if driver.find_element(By.ID, "recaptcha-anchor").get_attribute("aria-checked") == "true":
-                            print("Quiz captcha verified!")
-                            verified = True
-                            break
-                    else:
-                        # If no anchor iframe present, may already be verified or submitted
-                        verified = True
-                        break
-                except Exception:
-                    pass
-                t.sleep(1.5)
+                        # Check for challenge bframe (inside jPop or default content)
+                        driver.switch_to.default_content()
+                        driver.switch_to.frame(driver.find_element(By.ID, "jPopFrame_content"))
+                        bframes = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha/api2/bframe"]')
+                        if not bframes:
+                            driver.switch_to.default_content()
+                            bframes = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha/api2/bframe"]')
 
-            # Switch back to popup frame and click submit / claim button
+                        if bframes and bframes[0].is_displayed():
+                            driver.switch_to.frame(bframes[0])
+                            buster_btns = driver.find_elements(By.CSS_SELECTOR, '#solver-button, .help-button-holder, button[id*="solver"]')
+                            if buster_btns and buster_btns[0].is_displayed() and buster_btns[0].is_enabled():
+                                print("Buster extension detected! Clicking auto-solve...")
+                                buster_btns[0].click()
+                                t.sleep(4)
+                    except Exception:
+                        pass
+                    t.sleep(1.5)
+
+            # 5. Switch to popup frame and click submit / claim button
             driver.switch_to.default_content()
             jpop = driver.find_elements(By.ID, "jPopFrame_content")
             if jpop and jpop[0].is_displayed():
                 driver.switch_to.frame(jpop[0])
                 claim_btns = driver.find_elements(
                     By.XPATH,
-                    '//*[@id="submit"] | //*[@id="bp_login"] | //input[@id="login"] | //a[contains(@class, "buttonsubmit")] | //input[@type="submit"]'
+                    '//*[@id="submit"] | //input[@id="submit"] | //a[contains(@class, "buttonsubmit")] | //input[@type="submit"]'
                 )
                 if claim_btns:
                     try:
                         driver.execute_script("arguments[0].click();", claim_btns[0])
                         print("Clicked submit to claim 10 crowns!")
-                        t.sleep(3)
-                    except Exception as e:
-                        print(f"Could not click claim button: {e}")
+                    except Exception:
+                        try:
+                            claim_btns[0].click()
+                            print("Clicked submit to claim 10 crowns!")
+                        except Exception as e:
+                            print(f"Could not click claim button: {e}")
 
-                # Check for daily limit message inside popup after clicking
-                try:
-                    popup_text = driver.find_element(By.TAG_NAME, "body").text.lower()
-                    if any(x in popup_text for x in ["maximum crowns", "already earned", "daily limit", "100 crowns"]):
-                        print("Daily crown limit reached!")
-                        driver.switch_to.default_content()
-                        return "DAILY_LIMIT"
-                except Exception:
-                    pass
+                # 6. Wait for reward response and verify confirmation
+                reward_confirmed = False
+                for _ in range(8):
+                    t.sleep(1.5)
+                    try:
+                        body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+                        if any(x in body_text for x in limit_phrases):
+                            print("Daily limit reached according to popup confirmation!")
+                            driver.switch_to.default_content()
+                            return "DAILY_LIMIT"
+                        if any(x in body_text for x in ["awarded", "earned", "crowns", "congratulations", "success"]):
+                            reward_confirmed = True
+                            print("KingsIsle confirmed reward claim!")
+                            break
+                    except Exception:
+                        # Popup closed or navigated
+                        reward_confirmed = True
+                        break
 
             driver.switch_to.default_content()
+
+            # Check if popup closed (normal behavior after successful claim)
+            t.sleep(2)
+            remaining_jpops = driver.find_elements(By.ID, "jPopFrame_content")
+            if not remaining_jpops or not remaining_jpops[0].is_displayed():
+                reward_confirmed = True
 
             # Dismiss any leftover alert
             try:
@@ -165,21 +181,24 @@ class WebDriver():
             except Exception:
                 pass
 
-            # Update lifetime crowns
-            if os.path.exists('data.pkl') and os.stat('data.pkl').st_size != 0:
+            if reward_confirmed:
+                if os.path.exists('data.pkl') and os.stat('data.pkl').st_size != 0:
+                    try:
+                        with open('data.pkl', 'rb') as f:
+                            self.crowns_earned = dill.load(f)
+                    except Exception:
+                        pass
+                self.crowns_earned += 10
+                print(f"Received 10 crowns! Lifetime total: {self.crowns_earned} crowns!")
                 try:
-                    with open('data.pkl', 'rb') as f:
-                        self.crowns_earned = dill.load(f)
-                except Exception:
-                    pass
-            self.crowns_earned += 10
-            print(f"Received 10 crowns! Lifetime total: {self.crowns_earned} crowns!")
-            try:
-                self.dump(self.crowns_earned)
-            except Exception as e:
-                print(f"Error saving crowns: {e}")
+                    self.dump(self.crowns_earned)
+                except Exception as e:
+                    print(f"Error saving crowns: {e}")
+                return "SUCCESS"
+            else:
+                print("Could not confirm reward claim for this quiz.")
+                return "UNCONFIRMED"
 
-            return "SUCCESS"
         except Exception as e:
             driver.switch_to.default_content()
             print(f"Quiz captcha step error: {e}")

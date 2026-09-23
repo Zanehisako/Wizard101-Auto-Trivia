@@ -150,8 +150,16 @@ class AutoTrivia():
                 # Check if daily limit message is displayed on page
                 try:
                     body_text = driver.find_element(By.TAG_NAME, 'body').text.lower()
-                    if any(msg in body_text for msg in ["maximum crowns you can earn today", "already earned your crowns for today", "already earned 100 crowns"]):
-                        print("KingsIsle indicates the daily crowns limit (100 crowns) has already been reached today!")
+                    if any(msg in body_text for msg in [
+                        "exceeded the number of quizzes allowed today",
+                        "come back tomorrow",
+                        "maximum crowns you can earn today",
+                        "already earned your crowns for today",
+                        "already earned 100 crowns",
+                        "already earned",
+                        "daily limit",
+                    ]):
+                        print(f"KingsIsle indicates the daily quiz/crown limit has been reached for {user} (exceeded quizzes allowed today / come back tomorrow).")
                         daily_limit_reached = True
                         break
                 except Exception:
@@ -285,8 +293,16 @@ class AutoTrivia():
                 # Check if daily limit reached
                 try:
                     body_text = driver.find_element(By.TAG_NAME, 'body').text.lower()
-                    if any(msg in body_text for msg in ["maximum crowns you can earn today", "already earned your crowns for today", "already earned 100 crowns"]):
-                        print("Daily crowns limit reached!")
+                    if any(msg in body_text for msg in [
+                        "exceeded the number of quizzes allowed today",
+                        "come back tomorrow",
+                        "maximum crowns you can earn today",
+                        "already earned your crowns for today",
+                        "already earned 100 crowns",
+                        "already earned",
+                        "daily limit",
+                    ]):
+                        print(f"Daily quiz/crown limit reached for {user}!")
                         daily_limit_reached = True
                         completed_quizes.add(quiz_name)
                         break
