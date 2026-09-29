@@ -11,6 +11,7 @@ __pycache__/
 # Sensitive credentials & live session profile data
 text_files/accounts.txt
 text_files/data.txt
+text_files/account_state.json
 data.pkl
 chrome_profile_data/
 user-data-dir/*
@@ -23,3 +24,6 @@ chromedriver.exe
 *.exe
 
 *.wasm
+
+# Tooling
+.opencode/

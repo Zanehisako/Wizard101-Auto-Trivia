@@ -33,13 +33,26 @@ class Threadium():
         buster_path = self.get_buster_extension_path()
         if buster_path:
             self.chrome_options.add_argument(f"--load-extension={buster_path}")
+            self.chrome_options.add_argument("--disable-features=DisableLoadExtensionCommandLineSwitch")
             print(f"Buster extension loaded from: {buster_path}")
+        else:
+            print("No complete Buster extension package was found.")
+
+    @staticmethod
+    def _is_complete_buster_extension(path):
+        required = (
+            os.path.join(path, "manifest.json"),
+            os.path.join(path, "src", "background", "script.js"),
+            os.path.join(path, "src", "base", "script.js"),
+            os.path.join(path, "src", "wasm"),
+        )
+        return all(os.path.exists(item) for item in required)
 
     def get_buster_extension_path(self):
         """Locates the Buster extension in local project or user's Chrome directory."""
         # 1. Project local directory
         local_ext = os.path.join(str(self.script_directory), "extensions", "buster")
-        if os.path.exists(os.path.join(local_ext, "manifest.json")):
+        if self._is_complete_buster_extension(local_ext):
             return os.path.abspath(local_ext)
 
         # 2. macOS Chrome Default extensions
@@ -47,15 +60,21 @@ class Threadium():
         if os.path.exists(mac_ext_base):
             versions = [os.path.join(mac_ext_base, d) for d in os.listdir(mac_ext_base) if os.path.isdir(os.path.join(mac_ext_base, d))]
             if versions:
-                return sorted(versions)[-1]
+                candidate = sorted(versions)[-1]
+                if self._is_complete_buster_extension(candidate):
+                    return candidate
 
         # 3. Windows Chrome Default extensions
         win_ext_base = os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\Extensions\mpbjkejclgfgadiemmefgebjfooflfhl")
         if os.path.exists(win_ext_base):
             versions = [os.path.join(win_ext_base, d) for d in os.listdir(win_ext_base) if os.path.isdir(os.path.join(win_ext_base, d))]
             if versions:
-                return sorted(versions)[-1]
+                candidate = sorted(versions)[-1]
+                if self._is_complete_buster_extension(candidate):
+                    return candidate
 
+        if os.path.exists(os.path.join(local_ext, "manifest.json")):
+            return os.path.abspath(local_ext)
         return None
 
     def add_user_accounts(self):

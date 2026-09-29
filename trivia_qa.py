@@ -6,7 +6,7 @@ wizard101_trivia_questions_and_answers = {
     "What is the name of the book stolen from the Royal Museum?":"The Krokonomicon",
     "Who is the Bear King of Grizzleheim?":"Valgard Goldenblade",
     "What type of rank 8 spell is taught to Death students at level 58?":"Damage + DoT",
-    "An unmodified Sun Serpent does what?":"900  1000 Fire Damage + 300 Fire Damage to entire team",
+    "An unmodified Sun Serpent does what?":"900-1000 Fire Damage + 300 Fire Damage",
     "What does the Time Ribbon protect against?":"Time Flux",
     "Which Aztecan ponders the Great Questions of Life?":"Philosoraptor",
     "How long do you have to wait to join a new match after fleeing in PVP?":"5 Minutes",
